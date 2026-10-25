@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique @db.VarChar(191)
+  name         String    @db.VarChar(120)
+  passwordHash String    @db.VarChar(255)
+  googleId     String?   @unique @db.VarChar(255)
+  role         String    @default("member") @db.VarChar(20)
+  createdAt    DateTime  @default(now())
+  forms        Form[]
+  sessions     Session[]
+}
+
+model Session {
+  tokenHash String   @id @db.Char(64)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Form {
+  id             String       @id @default(cuid())
+  ownerId        String
+  owner          User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title          String       @default("Untitled form") @db.VarChar(200)
+  description    String       @db.Text
+  submitLabel    String       @default("Submit") @db.VarChar(100)
+  logo           String       @db.LongText
+  cover          String       @db.LongText
+  background     String       @db.LongText
+  poweredBy      Boolean      @default(true)
+  successTitle   String       @default("Thank you!") @db.VarChar(200)
+  successMessage String       @db.Text
+  successButton  String       @default("Submit another response") @db.VarChar(100)
+  theme          String       @db.Text
+  fields         String       @db.LongText
+  published      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  submissions    Submission[]
+  settings       Setting[]
+
+  @@index([ownerId, updatedAt])
+}
+
+model Submission {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  answers   String   @db.LongText
+
+  @@index([formId, createdAt])
+}
+
+model Setting {
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  key       String   @db.VarChar(80)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+
+  @@id([formId, key])
+}
