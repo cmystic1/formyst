@@ -12,6 +12,7 @@ import {
   getIntegrationPresence,
   getOwnedForm,
   listSubmissions,
+  markSubmissionsRead,
   submissionColumns,
 } from "@/lib/store";
 
@@ -38,7 +39,14 @@ export default async function AdminPage({ params }: PageProps<"/forms/[id]/submi
     getIntegrationPresence(id),
   ]);
   const columns = submissionColumns(form?.fields ?? [], submissions);
-  const integrationCount = Object.values(presence).filter(Boolean).length;
+  await markSubmissionsRead(user.id, id, submissions.map((submission) => submission.id));
+  const integrationCount = [
+    presence.n8nWebhookUrl,
+    presence.telegramBotToken && presence.telegramChatId,
+    presence.slackWebhookUrl,
+    presence.discordWebhookUrl,
+    presence.genericWebhookUrl,
+  ].filter(Boolean).length;
   const latestResponse = submissions[0]?.createdAt ?? null;
 
   return (
@@ -83,7 +91,7 @@ export default async function AdminPage({ params }: PageProps<"/forms/[id]/submi
           </div>
           <div className="rounded-[20px] border border-slate-200/80 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,.03)]">
             <p className="text-xs font-semibold uppercase tracking-[.12em] text-slate-500">Active integrations</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{integrationCount}<span className="ml-1 text-base font-semibold text-slate-400">/ 3</span></p>
+            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{integrationCount}<span className="ml-1 text-base font-semibold text-slate-400">/ 5</span></p>
             <p className="mt-1 text-xs text-slate-500">Automated delivery connections</p>
           </div>
         </section>
@@ -170,7 +178,7 @@ export default async function AdminPage({ params }: PageProps<"/forms/[id]/submi
         <section className={cardClass}>
           <h2 className={sectionTitleClass}>Integrations</h2>
           <p className="mt-1 mb-5 text-sm text-slate-500">
-            Optionally forward each submission to n8n and/or send a Telegram notification.
+            Forward submissions to n8n or an automation webhook, and send summaries to Telegram, Slack, or Discord.
           </p>
           <SettingsPanel presence={presence} formId={id} />
         </section>

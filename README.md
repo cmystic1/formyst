@@ -19,9 +19,10 @@ only the owner can edit it or see responses.
 - Per-field label, input, border, focus, size, and corner styling; custom page
   background colors and uploaded background images.
 - Multiple forms per account; private response dashboards and CSV exports.
-- A constrained AI form assistant for drafting form and theme changes.
+- A local AI assistant for applying form and theme edits and answering product-help questions.
 - Public email/password sign-up, Google sign-in, admin-created accounts, and self-service password changes.
-- Optional n8n webhook and Telegram notifications per form.
+- Optional n8n, automation, Slack, Discord, and Telegram integrations per form.
+- Red unread-response badges on the forms dashboard, cleared when responses are opened.
 
 ## Requirements
 
@@ -92,11 +93,36 @@ server and the `qwen3:4b` model by default. You can override these with
 there are no per-request API charges; the model runs on the computer hosting
 Formyst. The model download uses roughly 2.5 GB of disk space.
 
-Only the current form design and the user's prompts are sent to Ollama; form
-submissions are not included. It returns a validated form suggestion that the
-user must apply in the editor. Applying it does not save or publish the form.
-The assistant has no tools or access to execute code, query the database, or
-alter the website.
+Only the current form design, the user's prompt, and recent assistant chat are
+sent to Ollama; form submissions are not included. The assistant first plans the
+edit, then generates a patch limited to the relevant form controls. Validated
+changes apply to the open editor
+automatically. The user still saves or publishes the form when ready. The
+assistant can answer questions about Formyst's form builder, publishing,
+responses, and integrations from a curated product guide. Account and security
+operations remain outside its scope. The assistant has no tools or access to
+execute code, query response data, or alter other forms.
+
+When someone reports hard-to-read text, the editor checks text contrast against
+card and input backgrounds, adjusts unsafe field and button colors, and makes a
+glass card more opaque if an image behind it obscures text. Whole-form redesigns
+get the same readability check before they appear in the editor.
+
+To evaluate a running local model against varied requests, run
+`node scripts/evaluate-assistant.mjs` for intent and scope, then
+`node scripts/evaluate-design-patch.mjs` for generated design patches. Set
+`OLLAMA_MODEL` to compare a different installed model. These checks use a
+synthetic form and do not read saved forms or responses.
+
+For deployment, run Ollama as a persistent service on the same server as the
+Formyst server process, install `qwen3:4b` there, and keep its API on loopback.
+Set `OLLAMA_BASE_URL=http://127.0.0.1:11434` and
+`OLLAMA_MODEL=qwen3:4b` for the deployed Formyst process. If Formyst runs in a
+container, its loopback address is inside that container, so Ollama must be
+reachable in the same network namespace for this configuration to work. The
+assistant will be unavailable when Ollama is stopped; the rest of Formyst can
+still run. On Linux, use Ollama's systemd service to keep it running after
+restarts: https://docs.ollama.com/linux.
 
 ## Import the previous SQLite installation
 
@@ -134,7 +160,9 @@ submission, and setting records are left in place.
   clients must not be trusted as IP addresses.
 - Set `WEBHOOK_ALLOWED_HOSTS` to a comma-separated list of exact HTTPS
   destination hosts, including a port when needed, before users can configure
-  n8n. Example: `WEBHOOK_ALLOWED_HOSTS=n8n.example.com`. Webhook redirects are
+  n8n, Slack, Discord, or an automation webhook. Example:
+  `WEBHOOK_ALLOWED_HOSTS=n8n.example.com,hooks.slack.com,discord.com,hooks.zapier.com`.
+  Webhook redirects are
   not followed. This lets the server operator control outbound destinations.
 - MySQL connections and the database account should be restricted to the app
   host. Back up the database and protect `.env`.

@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { FIELD_STYLE_DEFAULTS, THEME_RADIUS_VALUES, type FormFieldStyle, type FormTheme, type ThemeRadius } from "./form-schema";
+import { bestTextColor } from "./form-readability";
 
 /**
  * Turns a FormTheme into CSS custom properties consumed by the `.fy-*`
@@ -78,7 +79,7 @@ const SURFACES = {
     inputBg: "#ffffff",
     inputBorder: "#cbd5e1",
     inputText: "#0f172a",
-    placeholder: "#94a3b8",
+    placeholder: "#64748b",
     danger: "#dc2626",
     dangerSoft: "#fef2f2",
     dangerText: "#b91c1c",
@@ -94,7 +95,7 @@ const SURFACES = {
     inputBg: "#0f172a",
     inputBorder: "#475569",
     inputText: "#f1f5f9",
-    placeholder: "#64748b",
+    placeholder: "#cbd5e1",
     danger: "#f87171",
     dangerSoft: "rgba(248, 113, 113, 0.12)",
     dangerText: "#fca5a5",
@@ -123,7 +124,10 @@ export function formThemeStyle(theme: FormTheme): CSSProperties {
   const isGlass = theme.cardMaterial === "glass";
   // Reference equality: `base`/`surface` are entries of the SURFACES map.
   const contentDark = surface === SURFACES.dark;
-  const cardBg = isGlass ? alpha(solidCardBg, contentDark ? 0.72 : 0.68) : solidCardBg;
+  const readableText = isGlass ? (contentDark ? "#ffffff" : "#0f172a") : surface.text;
+  const readableMuted = isGlass ? (contentDark ? "#f1f5f9" : "#334155") : surface.muted;
+  const readableLabel = isGlass ? readableText : surface.label;
+  const cardBg = isGlass ? alpha(solidCardBg, theme.glassOpacity) : solidCardBg;
 
   // A custom font-family stack wins over the font preset.
   const fontStack = theme.fontCustom.trim() || FONT_STACKS[theme.font];
@@ -157,9 +161,9 @@ export function formThemeStyle(theme: FormTheme): CSSProperties {
     "--fy-card-saturation": isGlass ? "1.35" : "1",
     "--fy-card-border": isGlass ? alpha(contentDark ? "#ffffff" : "#ffffff", 0.48) : surface.cardBorder,
     "--fy-card-shadow": isGlass ? "0 22px 70px rgba(30, 41, 59, 0.18)" : surface.shadow,
-    "--fy-text": surface.text,
-    "--fy-muted": surface.muted,
-    "--fy-label": surface.label,
+    "--fy-text": readableText,
+    "--fy-muted": readableMuted,
+    "--fy-label": readableLabel,
     "--fy-input-bg": surface.inputBg,
     "--fy-input-border": surface.inputBorder,
     "--fy-input-text": surface.inputText,
@@ -179,6 +183,7 @@ export function formFieldStyle(styleInput?: FormFieldStyle): CSSProperties {
     "--fy-field-label": style.labelColor || "var(--fy-label)",
     "--fy-field-bg": style.inputBg || "var(--fy-input-bg)",
     "--fy-field-text": style.inputText || "var(--fy-input-text)",
+    "--fy-field-placeholder": style.inputBg ? bestTextColor(style.inputBg) : "var(--fy-placeholder)",
     "--fy-field-border": style.inputBorder || "var(--fy-input-border)",
     "--fy-field-accent": style.accent || "var(--fy-accent)",
     "--fy-field-radius": style.radius === "auto" ? "var(--fy-radius)" : THEME_RADIUS_VALUES[style.radius],

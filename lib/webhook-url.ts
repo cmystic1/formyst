@@ -10,3 +10,13 @@ export function isAllowedWebhookUrl(value: string): boolean {
     return false;
   }
 }
+
+export function isServiceWebhookUrl(value: string, service: "slack" | "discord"): boolean {
+  if (!isAllowedWebhookUrl(value)) return false;
+  const url = new URL(value);
+  if (service === "slack") {
+    return url.hostname === "hooks.slack.com" && /^\/services\/[^/]+\/[^/]+\/[^/]+\/?$/.test(url.pathname);
+  }
+  return (url.hostname === "discord.com" || url.hostname === "discordapp.com") &&
+    /^\/api(?:\/v\d+)?\/webhooks\/\d+\/[^/]+\/?$/.test(url.pathname);
+}

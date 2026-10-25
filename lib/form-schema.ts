@@ -205,6 +205,8 @@ export type FormTheme = {
   surface: ThemeSurface;
   /** Whether the form card uses a solid or frosted glass surface. */
   cardMaterial: ThemeCardMaterial;
+  /** Opacity of the form card when the glass material is selected. */
+  glassOpacity: number;
   /** Typeface for the public form. */
   font: ThemeFont;
   /** Custom page background (" = follow the surface preset). */
@@ -234,6 +236,7 @@ export const THEME_DEFAULTS: FormTheme = {
   radius: "soft",
   surface: "light",
   cardMaterial: "solid",
+  glassOpacity: 0.68,
   font: "sans",
   pageBg: "",
   cardBg: "",
@@ -457,6 +460,7 @@ const themeSchema = z
     radius: z.enum(THEME_RADIUSES).catch(THEME_DEFAULTS.radius),
     surface: z.enum(THEME_SURFACES).catch(THEME_DEFAULTS.surface),
     cardMaterial: z.enum(THEME_CARD_MATERIALS).catch(THEME_DEFAULTS.cardMaterial),
+    glassOpacity: z.number().min(0.2).max(0.9).catch(THEME_DEFAULTS.glassOpacity),
     font: z.enum(THEME_FONTS).catch(THEME_DEFAULTS.font),
     pageBg: z
       .string()
@@ -597,6 +601,7 @@ export function normalizeTheme(input: z.infer<typeof themeSchema> | undefined): 
     radius: theme.radius,
     surface: theme.surface,
     cardMaterial: theme.cardMaterial,
+    glassOpacity: theme.glassOpacity,
     font: theme.font,
     pageBg: theme.pageBg.toLowerCase(),
     cardBg: theme.cardBg.toLowerCase(),

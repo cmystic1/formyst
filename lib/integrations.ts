@@ -4,7 +4,7 @@ import {
   SubmissionRecord,
   type IntegrationSettings,
 } from "./store";
-import { isAllowedWebhookUrl } from "./webhook-url";
+import { isAllowedWebhookUrl, isServiceWebhookUrl } from "./webhook-url";
 
 const DELIVERY_TIMEOUT_MS = 8000;
 
@@ -61,6 +61,19 @@ async function sendToWebhook(url: string, payload: unknown): Promise<void> {
   }
 }
 
+async function sendToServiceWebhook(
+  url: string,
+  service: "slack" | "discord",
+  payload: unknown,
+): Promise<void> {
+  if (!isServiceWebhookUrl(url, service)) throw new Error("webhook destination is not allowed");
+  await sendToWebhook(url, payload);
+}
+
+function escapeSlackText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 async function sendToTelegram(token: string, chatId: string, text: string): Promise<void> {
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
@@ -93,7 +106,10 @@ export async function deliverSubmission(
   settings?: IntegrationSettings,
   formId?: string,
 ): Promise<void> {
-  const config = settings ?? (formId ? await getIntegrationSettings(formId) : { n8nWebhookUrl: "", telegramBotToken: "", telegramChatId: "" });
+  const config = settings ?? (formId ? await getIntegrationSettings(formId) : {
+    n8nWebhookUrl: "", telegramBotToken: "", telegramChatId: "",
+    slackWebhookUrl: "", discordWebhookUrl: "", genericWebhookUrl: "",
+  });
   const tasks: Promise<void>[] = [];
 
   if (config.n8nWebhookUrl) {
@@ -102,6 +118,24 @@ export async function deliverSubmission(
         logFailure("n8n webhook", submission.id, error),
       ),
     );
+  }
+
+  if (config.genericWebhookUrl) {
+    tasks.push(sendToWebhook(config.genericWebhookUrl, buildWebhookPayload(submission, form))
+      .catch((error) => logFailure("automation webhook", submission.id, error)));
+  }
+
+  if (config.slackWebhookUrl) {
+    const message = escapeSlackText(buildTelegramMessage(submission, form));
+    tasks.push(sendToServiceWebhook(config.slackWebhookUrl, "slack", { text: message, link_names: false })
+      .catch((error) => logFailure("Slack", submission.id, error)));
+  }
+
+  if (config.discordWebhookUrl) {
+    const message = truncate(buildTelegramMessage(submission, form), 2000);
+    tasks.push(sendToServiceWebhook(config.discordWebhookUrl, "discord", {
+      content: message, allowed_mentions: { parse: [] },
+    }).catch((error) => logFailure("Discord", submission.id, error)));
   }
 
   if (config.telegramBotToken && config.telegramChatId) {

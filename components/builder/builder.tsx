@@ -370,7 +370,7 @@ export function Builder({ formId, initialForm, isPublished, canManageUsers }: Bu
             ) : (
               <span className="hidden text-xs text-slate-500 sm:inline">Live link available after publishing</span>
             )}
-            <Link href={`/forms/${formId}/submissions`} className={`${buttonSecondary} hidden xl:inline-flex`}>
+            <Link href={`/forms/${formId}/submissions`} prefetch={false} className={`${buttonSecondary} hidden xl:inline-flex`}>
               Responses
             </Link>
             <button type="button" onClick={() => void updateVisibility(!published)} disabled={visibilityBusy || saving || (!published && form.fields.length === 0)} className={published ? buttonSecondary : buttonPrimary} title={!published && form.fields.length === 0 ? "Add at least one field before publishing." : undefined}>
@@ -514,6 +514,23 @@ export function Builder({ formId, initialForm, isPublished, canManageUsers }: Bu
                 />
                 <p className={hintClass}>Glass uses a translucent card with a soft backdrop blur.</p>
               </div>
+
+              {form.theme.cardMaterial === "glass" ? (
+                <div>
+                  <label htmlFor="glass-opacity" className={labelClass}>Glass opacity: {Math.round(form.theme.glassOpacity * 100)}%</label>
+                  <input
+                    id="glass-opacity"
+                    type="range"
+                    min="20"
+                    max="90"
+                    step="1"
+                    value={Math.round(form.theme.glassOpacity * 100)}
+                    onChange={(event) => updateTheme({ glassOpacity: Number(event.target.value) / 100 })}
+                    className="mt-2 w-full accent-brand-600"
+                  />
+                  <p className={hintClass}>Lower opacity lets more of the page background show through.</p>
+                </div>
+              ) : null}
 
               <div>
                 <span className={labelClass}>Corners</span>

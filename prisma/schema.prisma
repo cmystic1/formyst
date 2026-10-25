@@ -60,9 +60,11 @@ model Submission {
   formId    String
   form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  readAt    DateTime?
   answers   String   @db.LongText
 
   @@index([formId, createdAt])
+  @@index([formId, readAt])
 }
 
 model Setting {

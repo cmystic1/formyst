@@ -25,6 +25,7 @@ export default async function HomePage() {
   const publishedCount = forms.filter((form) => form.published).length;
   const draftCount = forms.length - publishedCount;
   const responseCount = forms.reduce((sum, form) => sum + form._count.submissions, 0);
+  const newResponseCount = forms.reduce((sum, form) => sum + form.newResponses, 0);
   const firstName = user.name.trim().split(/\s+/)[0] || "there";
   const libraryForms = forms.map((form) => ({
     id: form.id,
@@ -32,6 +33,7 @@ export default async function HomePage() {
     published: form.published,
     edited: new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(form.updatedAt),
     responses: form._count.submissions,
+    newResponses: form.newResponses,
   }));
 
   return (
@@ -64,7 +66,14 @@ export default async function HomePage() {
                 <p className="text-xs font-semibold uppercase tracking-[.12em] text-slate-500">{item.label}</p>
                 <span className={`h-2.5 w-2.5 rounded-full ${item.tone === "indigo" ? "bg-brand-500" : item.tone === "emerald" ? "bg-emerald-500" : item.tone === "amber" ? "bg-amber-500" : "bg-sky-500"}`} />
               </div>
-              <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{item.value}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <p className="text-3xl font-bold tracking-tight text-slate-950">{item.value}</p>
+                {item.label === "Responses" && newResponseCount > 0 ? (
+                  <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white" aria-label={`${newResponseCount} new responses`}>
+                    {newResponseCount} new
+                  </span>
+                ) : null}
+              </div>
               <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
             </div>
           ))}

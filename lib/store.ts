@@ -42,11 +42,20 @@ function definitionFromRow(row: {
 }
 
 export async function listForms(ownerId: string) {
-  return prisma.form.findMany({
+  const forms = await prisma.form.findMany({
     where: { ownerId },
-    select: { id: true, title: true, published: true, updatedAt: true, _count: { select: { submissions: true } } },
+    select: { id: true, title: true, published: true, updatedAt: true, _count: { select: {
+      submissions: true,
+    } } },
     orderBy: { updatedAt: "desc" },
   });
+  const unread = await prisma.submission.groupBy({
+    by: ["formId"],
+    where: { form: { ownerId }, readAt: null },
+    _count: { _all: true },
+  });
+  const counts = new Map(unread.map((row) => [row.formId, row._count._all]));
+  return forms.map((form) => ({ ...form, newResponses: counts.get(form.id) ?? 0 }));
 }
 
 export async function getOwnedForm(ownerId: string, formId: string) {
@@ -98,6 +107,16 @@ export async function listSubmissions(ownerId: string, formId: string): Promise<
   return rows.map((row) => ({ id: row.id, createdAt: row.createdAt, answers: parseAnswers(row.answers) }));
 }
 
+/** Mark only responses included in the page render, so an arriving response stays new. */
+export async function markSubmissionsRead(ownerId: string, formId: string, ids: string[]): Promise<void> {
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    await prisma.submission.updateMany({
+      where: { formId, form: { ownerId }, id: { in: ids.slice(offset, offset + 500) }, readAt: null },
+      data: { readAt: new Date() },
+    });
+  }
+}
+
 export async function createSubmission(formId: string, answers: Answers): Promise<SubmissionRecord> {
   const row = await prisma.submission.create({ data: { formId, answers: JSON.stringify(answers) } });
   return { id: row.id, createdAt: row.createdAt, answers };
@@ -127,16 +146,15 @@ export async function getIntegrationSettings(formId: string): Promise<Integratio
     n8nWebhookUrl: byKey.get(SETTING_DB_KEY_MAP.n8nWebhookUrl) ?? "",
     telegramBotToken: byKey.get(SETTING_DB_KEY_MAP.telegramBotToken) ?? "",
     telegramChatId: byKey.get(SETTING_DB_KEY_MAP.telegramChatId) ?? "",
+    slackWebhookUrl: byKey.get(SETTING_DB_KEY_MAP.slackWebhookUrl) ?? "",
+    discordWebhookUrl: byKey.get(SETTING_DB_KEY_MAP.discordWebhookUrl) ?? "",
+    genericWebhookUrl: byKey.get(SETTING_DB_KEY_MAP.genericWebhookUrl) ?? "",
   };
 }
 
 export async function getIntegrationPresence(formId: string): Promise<Record<IntegrationSettingKey, boolean>> {
   const settings = await getIntegrationSettings(formId);
-  return {
-    n8nWebhookUrl: settings.n8nWebhookUrl.length > 0,
-    telegramBotToken: settings.telegramBotToken.length > 0,
-    telegramChatId: settings.telegramChatId.length > 0,
-  };
+  return Object.fromEntries(INTEGRATION_SETTING_KEYS.map((key) => [key, settings[key].length > 0])) as Record<IntegrationSettingKey, boolean>;
 }
 
 export async function updateIntegrationSettings(
@@ -147,6 +165,7 @@ export async function updateIntegrationSettings(
     operations.push(prisma.setting.deleteMany({ where: { formId, key: SETTING_DB_KEY_MAP[key] } }));
   }
   for (const key of INTEGRATION_SETTING_KEYS) {
+    if (clear.includes(key)) continue;
     const value = values[key];
     if (value === undefined) continue;
     const compound = { formId_key: { formId, key: SETTING_DB_KEY_MAP[key] } };

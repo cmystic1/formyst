@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ExternalLinkIcon, FormsIcon } from "@/components/icons";
 import { FormVisibilityButton } from "@/components/form-visibility-button";
 import { buttonSecondary, inputClass } from "@/components/ui";
@@ -13,9 +14,11 @@ export type FormLibraryItem = {
   published: boolean;
   edited: string;
   responses: number;
+  newResponses: number;
 };
 
 export function FormLibrary({ forms }: { forms: FormLibraryItem[] }) {
+  const router = useRouter();
   const [filter, setFilter] = useState<FormFilter>("all");
   const [query, setQuery] = useState("");
   const counts = {
@@ -24,6 +27,13 @@ export function FormLibrary({ forms }: { forms: FormLibraryItem[] }) {
     drafts: forms.filter((form) => !form.published).length,
   };
   const visibleForms = useMemo(() => filterFormLibrary(forms, filter, query), [filter, forms, query]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [router]);
 
   return (
     <div>
@@ -76,11 +86,19 @@ export function FormLibrary({ forms }: { forms: FormLibraryItem[] }) {
               </h3>
               <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
                 <span><strong className="font-semibold text-slate-800">{form.responses}</strong> responses</span>
+                {form.newResponses > 0 ? (
+                  <span className="rounded-full bg-red-600 px-2 py-0.5 font-bold text-white" aria-label={`${form.newResponses} new responses for ${form.title}`}>
+                    {form.newResponses} new
+                  </span>
+                ) : null}
                 <span>Edited {form.edited}</span>
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
                 <Link href={`/forms/${form.id}/edit`} className={`${buttonSecondary} min-h-9 px-3 py-2 text-xs`}>Edit form</Link>
-                <Link href={`/forms/${form.id}/submissions`} className={`${buttonSecondary} min-h-9 px-3 py-2 text-xs`}>Responses</Link>
+                <Link href={`/forms/${form.id}/submissions`} prefetch={false} className={`${buttonSecondary} min-h-9 px-3 py-2 text-xs`}>
+                  Responses
+                  {form.newResponses > 0 ? <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{form.newResponses}</span> : null}
+                </Link>
                 {form.published ? (
                   <Link href={`/f/${form.id}`} target="_blank" rel="noopener noreferrer" className={`${buttonSecondary} min-h-9 px-3 py-2 text-xs`} aria-label={`Open ${form.title} in a new tab`}>
                     <ExternalLinkIcon className="h-3.5 w-3.5" /> Open

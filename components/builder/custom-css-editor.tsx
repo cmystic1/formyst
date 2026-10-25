@@ -21,11 +21,8 @@ export function CustomCssEditor({
 }: CustomCssEditorProps) {
   return (
     <details className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold text-slate-800">
+      <summary className="cursor-pointer list-none text-sm font-semibold text-slate-800">
         <span>{label}</span>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Live preview
-        </span>
       </summary>
       <div className="mt-3">
         <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950 shadow-inner">

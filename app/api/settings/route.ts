@@ -2,7 +2,7 @@ import { getCurrentUser, isSameOrigin } from "@/lib/auth";
 import { getOwnedForm } from "@/lib/store";
 import { jsonError, readJsonBody } from "@/lib/http";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
-import { isAllowedWebhookUrl } from "@/lib/webhook-url";
+import { isAllowedWebhookUrl, isServiceWebhookUrl } from "@/lib/webhook-url";
 import {
   INTEGRATION_SETTING_KEYS,
   IntegrationSettingKey,
@@ -57,6 +57,19 @@ export async function POST(request: Request) {
       errors.telegramChatId = "Enter a numeric chat ID (-100…) or @channelusername.";
     } else {
       values.telegramChatId = chatId;
+    }
+  }
+
+  for (const key of ["slackWebhookUrl", "discordWebhookUrl", "genericWebhookUrl"] as const) {
+    const url = typeof input[key] === "string" ? input[key].trim() : "";
+    if (!url) continue;
+    const valid = key === "genericWebhookUrl"
+      ? isAllowedWebhookUrl(url)
+      : isServiceWebhookUrl(url, key === "slackWebhookUrl" ? "slack" : "discord");
+    if (url.length > 2048 || !valid) {
+      errors[key] = "Use a valid HTTPS webhook URL on a host allowed by the server operator.";
+    } else {
+      values[key] = url;
     }
   }
 

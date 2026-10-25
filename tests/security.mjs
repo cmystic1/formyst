@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   createField, defaultFormDefinition, parseFormDefinition, validateSubmission, visibleFieldIds,
 } from '../lib/form-schema.ts'
-import { isAllowedWebhookUrl } from '../lib/webhook-url.ts'
+import { isAllowedWebhookUrl, isServiceWebhookUrl } from '../lib/webhook-url.ts'
 
 test('form definitions reject blank labels and reserved answer keys', () => {
   const form = defaultFormDefinition()
@@ -115,6 +115,22 @@ test('webhooks require an exact allowed HTTPS host', () => {
     assert.equal(isAllowedWebhookUrl('https://n8n.example.com.evil.test/webhook'), false)
     assert.equal(isAllowedWebhookUrl('https://n8n.example.com:8443/webhook'), false)
     assert.equal(isAllowedWebhookUrl('https://user:pass@n8n.example.com/webhook'), false)
+  } finally {
+    if (previous === undefined) delete process.env.WEBHOOK_ALLOWED_HOSTS
+    else process.env.WEBHOOK_ALLOWED_HOSTS = previous
+  }
+})
+
+test('service webhooks require their own endpoint shape and an allowed host', () => {
+  const previous = process.env.WEBHOOK_ALLOWED_HOSTS
+  process.env.WEBHOOK_ALLOWED_HOSTS = 'hooks.slack.com,discord.com,hooks.zapier.com'
+  try {
+    assert.equal(isServiceWebhookUrl('https://hooks.slack.com/services/T/B/token', 'slack'), true)
+    assert.equal(isServiceWebhookUrl('https://discord.com/api/webhooks/123/token', 'discord'), true)
+    assert.equal(isServiceWebhookUrl('https://hooks.slack.com/other', 'slack'), false)
+    assert.equal(isServiceWebhookUrl('https://discord.com/api/webhooks/123/token', 'slack'), false)
+    assert.equal(isServiceWebhookUrl('https://discord.com.evil.test/api/webhooks/123/token', 'discord'), false)
+    assert.equal(isAllowedWebhookUrl('https://hooks.zapier.com/hooks/catch/1/abc'), true)
   } finally {
     if (previous === undefined) delete process.env.WEBHOOK_ALLOWED_HOSTS
     else process.env.WEBHOOK_ALLOWED_HOSTS = previous

@@ -33,6 +33,33 @@ const FIELD_META: Record<
     placeholder: "-1001234567890",
     inputType: "text",
   },
+  slackWebhookUrl: {
+    label: "Slack incoming webhook",
+    description: "Post a response summary to the channel linked to this webhook. Allow hooks.slack.com on the server.",
+    placeholder: "https://hooks.slack.com/services/...",
+    inputType: "password",
+  },
+  discordWebhookUrl: {
+    label: "Discord webhook",
+    description: "Post a response summary to the linked Discord channel. Allow discord.com on the server.",
+    placeholder: "https://discord.com/api/webhooks/...",
+    inputType: "password",
+  },
+  genericWebhookUrl: {
+    label: "Automation webhook",
+    description: "Send the full response payload to Zapier, Make, or another HTTPS endpoint. Allow its host on the server.",
+    placeholder: "https://hooks.zapier.com/hooks/catch/...",
+    inputType: "password",
+  },
+};
+
+const emptySettings: Record<IntegrationSettingKey, string> = {
+  n8nWebhookUrl: "",
+  telegramBotToken: "",
+  telegramChatId: "",
+  slackWebhookUrl: "",
+  discordWebhookUrl: "",
+  genericWebhookUrl: "",
 };
 
 function ClearToggle({
@@ -62,11 +89,7 @@ function ClearToggle({
 
 export function SettingsPanel({ presence, formId }: { presence: Presence; formId: string }) {
   const router = useRouter();
-  const [values, setValues] = useState<Record<IntegrationSettingKey, string>>({
-    n8nWebhookUrl: "",
-    telegramBotToken: "",
-    telegramChatId: "",
-  });
+  const [values, setValues] = useState<Record<IntegrationSettingKey, string>>(emptySettings);
   const [clearList, setClearList] = useState<IntegrationSettingKey[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -93,7 +116,7 @@ export function SettingsPanel({ presence, formId }: { presence: Presence; formId
       });
 
       if (response.ok) {
-        setValues({ n8nWebhookUrl: "", telegramBotToken: "", telegramChatId: "" });
+        setValues(emptySettings);
         setClearList([]);
         setStatus("saved");
         router.refresh();

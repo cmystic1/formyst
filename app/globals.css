@@ -123,6 +123,10 @@ body {
   color: var(--fy-placeholder);
 }
 
+.fy-field .fy-input::placeholder {
+  color: var(--fy-field-placeholder, var(--fy-placeholder));
+}
+
 .fy-input:focus {
   border-color: var(--fy-accent);
   box-shadow: 0 0 0 4px var(--fy-ring);

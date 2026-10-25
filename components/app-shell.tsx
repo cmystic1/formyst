@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { FormsIcon, LogoMark, SettingsIcon, UsersIcon } from "@/components/icons";
 import { LogoutButton } from "@/components/logout-button";
+import { WorkspaceAssistant } from "@/components/workspace-assistant";
 
 type AppShellProps = {
   user: { name: string; email: string; role: string };
@@ -55,6 +56,7 @@ export function AppShell({ user, active, children }: AppShellProps) {
       <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         {children}
       </main>
+      {active === "forms" ? <WorkspaceAssistant /> : null}
     </div>
   );
 }
