@@ -4,8 +4,9 @@ import { jsonError, readJsonBody } from "@/lib/http";
 import { rateLimit } from "@/lib/rate-limit";
 import { getOwnedForm } from "@/lib/store";
 import { answerSiteHelp } from "@/lib/assistant-help";
-import { FORMYST_HELP_GUIDE, isRestrictedAssistantRequest } from "@/lib/assistant-guidance";
-import { allowedThemeKeys, completeThemePatch, editPlanJsonSchema, editPlanSchema, glassDirectionFromPlan, includeNamedThemeAreas, normalizePatchColors, planSystemPrompt, reconcileGlassDirection, validateEditPlan, type EditScope, type ThemeArea } from "@/lib/assistant-planner";
+import { FORMYST_HELP_GUIDE } from "@/lib/assistant-guidance";
+import { loadAssistantHistory, saveAssistantExchange } from "@/lib/assistant-memory";
+import { allowedThemeKeys, completeThemePatch, editPlanJsonSchema, editPlanSchema, glassDirectionFromPlan, includeNamedThemeAreas, normalizePatchColors, planSystemPrompt, reconcileGlassDirection, refineEverydayPlan, resolveGlassFollowUp, validateEditPlan, type EditScope, type ThemeArea } from "@/lib/assistant-planner";
 import { formEditSystemPrompt } from "@/lib/assistant-design-prompt";
 import { isReadabilityRequest, repairFormReadability } from "@/lib/form-readability";
 import {
@@ -70,8 +71,9 @@ const assistantThemeSchema = z.object({
 }).partial().strict();
 
 const assistantFieldChangeSchema = z.object({
-  action: z.enum(["add", "update", "remove"]),
+  action: z.enum(["add", "update", "remove", "move"]),
   id: z.string().max(64).optional(),
+  toIndex: z.number().int().min(0).max(MAX_FIELDS - 1).optional(),
   type: z.enum(FIELD_TYPES).optional(),
   label: z.string().max(300).optional(),
   placeholder: z.string().max(300).optional(),
@@ -136,8 +138,6 @@ async function ollamaFailure(response: Response): Promise<Response> {
   return jsonError(503, "Ollama could not start the local model. Check Ollama's server log and try again.");
 }
 
-type ConversationMessage = { role: "user" | "assistant"; content: string };
-
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return jsonError(403, "Invalid request origin.");
   const user = await getCurrentUser();
@@ -145,7 +145,7 @@ export async function POST(request: Request) {
 
   const body = await readJsonBody(request);
   if (!body.ok) return jsonError(body.status, body.error);
-  const input = body.value as { formId?: unknown; prompt?: unknown; form?: unknown; history?: unknown } | null;
+  const input = body.value as { formId?: unknown; prompt?: unknown; form?: unknown } | null;
   if (typeof input?.formId !== "string" || input.formId.length > 64) return jsonError(400, "Choose a valid form.");
   if (typeof input.prompt !== "string" || !input.prompt.trim() || input.prompt.trim().length > 1200) return jsonError(400, "Enter a request of up to 1,200 characters.");
   const owned = await getOwnedForm(user.id, input.formId);
@@ -153,35 +153,27 @@ export async function POST(request: Request) {
   const current = parseFormDefinition(input.form);
   if (!current.ok) return jsonError(400, "The current form could not be read. Save or reload it, then try again.");
 
-  const history: ConversationMessage[] = [];
-  if (Array.isArray(input.history)) {
-    for (const message of input.history.slice(-4)) {
-      if (!message || typeof message !== "object") continue;
-      const item = message as { role?: unknown; content?: unknown };
-      if ((item.role === "user" || item.role === "assistant") && typeof item.content === "string") {
-        history.push({ role: item.role, content: item.content.slice(0, 240) });
-      }
-    }
-  }
   if (!rateLimit(`ai-form:${user.id}`, 8, 10 * 60_000).ok)
     return jsonError(429, "You've reached the form assistant limit. Please try again in a few minutes.");
 
   const requestText = input.prompt.trim();
-  if (isRestrictedAssistantRequest(requestText)) {
-    return Response.json({ reply: "I can help with form design, publishing, responses, and integrations. Account and security tasks are outside this assistant." });
-  }
+  const history = await loadAssistantHistory(user.id, input.formId, 12);
+  const reply = async (message: string, form?: FormDefinition) => {
+    await saveAssistantExchange(user.id, input.formId as string, requestText, message);
+    return Response.json({ reply: message, ...(form ? { form } : {}) });
+  };
   if (isReadabilityRequest(requestText)) {
     const repaired = repairFormReadability(current.value, 7);
     if (repaired.changes.length) {
       const validatedRepair = parseFormDefinition(repaired.form);
       if (!validatedRepair.ok) return jsonError(502, "The text contrast repair could not be applied. Please try again.");
-      return Response.json({ reply: `I ${repaired.changes.join(", and ")}. Save the form when it looks right.`, form: validatedRepair.value });
+      return reply(`I ${repaired.changes.join(", and ")}. Save the form when it looks right.`, validatedRepair.value);
     }
   }
   const substantiveWords = requestText.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/u)
     .filter((word) => word && !/^(?:please|kindly)$/i.test(word));
-  if (substantiveWords.length <= 1 && history.at(-1)?.role !== "assistant") {
-    return Response.json({ reply: "What would you like me to change? Tell me the part of the form and the result you want." });
+  if (substantiveWords.length <= 1 && /^(?:more|less|again|same|that|it)$/i.test(requestText) && history.at(-1)?.role !== "assistant") {
+    return reply("What would you like me to change? Tell me the part of the form and the result you want.");
   }
 
   const formContext = {
@@ -241,13 +233,18 @@ export async function POST(request: Request) {
     const result = await planResponse.json() as { message?: { content?: string } };
     const parsed = editPlanSchema.safeParse(JSON.parse(result.message?.content ?? ""));
     const validated = parsed.success ? validateEditPlan(parsed.data) : null;
-    plan = validated ? includeNamedThemeAreas(reconcileGlassDirection(validated), requestText) : null;
+    plan = validated ? refineEverydayPlan(resolveGlassFollowUp(includeNamedThemeAreas(reconcileGlassDirection(validated), requestText), requestText, history), requestText) : null;
   } catch {
     plan = null;
   }
   if (!plan) return jsonError(502, "The assistant could not interpret that request. Please rephrase it.");
-  if (plan.action === "help") return answerSiteHelp(requestText);
-  if (plan.action === "clarify") return Response.json({ reply: plan.reply.trim() || "What part of the form would you like me to change?" });
+  if (plan.action === "help") {
+    const help = await answerSiteHelp(requestText, history);
+    if (!help.ok) return help;
+    const data = await help.json() as { reply: string };
+    return reply(data.reply);
+  }
+  if (plan.action === "clarify") return reply(plan.reply.trim() || "What part of the form would you like me to change?");
 
   const outputSchema = scopedProposalSchema(plan.scopes, plan.themeAreas);
   const outputJsonSchema = { ...z.toJSONSchema(outputSchema) };
@@ -323,6 +320,7 @@ export async function POST(request: Request) {
     for (const change of proposed.fields ?? []) {
       if (change.action === "add") {
         if (!change.type || !change.label?.trim()) return jsonError(502, "The assistant returned an incomplete field. Please try again.");
+        if (CHOICE_TYPES.includes(change.type) && !change.options?.length) return reply(`Which choices should "${change.label.trim()}" offer?`);
         if (fields.length >= MAX_FIELDS) return jsonError(400, `Forms can have at most ${MAX_FIELDS} fields.`);
         const field = createField(change.type);
         field.label = change.label.trim();
@@ -344,20 +342,33 @@ export async function POST(request: Request) {
         fields.splice(index, 1);
         continue;
       }
+      if (change.action === "move") {
+        if (change.toIndex === undefined || change.toIndex >= fields.length) return jsonError(502, "The assistant returned an invalid question position. Please try again.");
+        const [moved] = fields.splice(index, 1);
+        fields.splice(change.toIndex, 0, moved);
+        continue;
+      }
 
       const field = fields[index];
+      const changedType = change.type !== undefined && change.type !== field.type;
+      const nextType = change.type ?? field.type;
+      if (changedType && CHOICE_TYPES.includes(nextType) && !CHOICE_TYPES.includes(field.type) && !change.options?.length) {
+        return reply(`Which choices should "${change.label?.trim() || field.label}" offer?`);
+      }
+      const typeDefaults = changedType ? createField(nextType) : null;
       fields[index] = {
         ...field,
+        type: nextType,
         ...(change.label !== undefined ? { label: change.label } : {}),
-        ...(change.placeholder !== undefined ? { placeholder: change.placeholder } : {}),
+        ...(change.placeholder !== undefined ? { placeholder: change.placeholder } : changedType ? { placeholder: typeDefaults!.placeholder } : {}),
         ...(change.helpText !== undefined ? { helpText: change.helpText } : {}),
         ...(change.required !== undefined ? { required: change.required } : {}),
-        ...(change.options !== undefined ? {
+        ...(change.options !== undefined && CHOICE_TYPES.includes(nextType) ? {
           options: change.options.map((label, optionIndex) => ({
             id: field.options[optionIndex]?.id ?? newId("o"),
             label,
           })),
-        } : {}),
+        } : changedType ? { options: CHOICE_TYPES.includes(nextType) ? CHOICE_TYPES.includes(field.type) ? field.options : typeDefaults!.options : [] } : {}),
         ...(change.style ? { style: { ...FIELD_STYLE_DEFAULTS, ...field.style, ...change.style } } : {}),
       };
     }
@@ -399,11 +410,14 @@ export async function POST(request: Request) {
     if (addedFields.length) changes.push(`added ${addedFields.map((field) => field.label).join(", ")}`);
     if (removedFields.length) changes.push(`removed ${removedFields.map((field) => field.label).join(", ")}`);
     if (updatedFields.length) changes.push(`restyled or updated ${updatedFields.map((field) => field.label).join(", ")}`);
+    const oldIds = current.value.fields.map((field) => field.id);
+    const newIds = nextForm.fields.map((field) => field.id);
+    if (oldIds.length === newIds.length && oldIds.every((id) => newIds.includes(id)) && oldIds.join("|") !== newIds.join("|")) changes.push("reordered the questions");
     if (proposed.title !== undefined && nextForm.title !== current.value.title) changes.push("updated the form title");
     if (proposed.description !== undefined && nextForm.description !== current.value.description) changes.push("updated the form description");
     if (proposed.submitLabel !== undefined && nextForm.submitLabel !== current.value.submitLabel) changes.push("updated the submit label");
     if (!changes.length) return jsonError(502, "The assistant did not make any changes. Try a more specific request.");
-    return Response.json({ reply: `I ${changes.join(", and ")}.`, form: nextForm });
+    return reply(`I ${changes.join(", and ")}. Save the form when it looks right.`, nextForm);
   } catch {
     return jsonError(502, "The local AI model returned an invalid edit. Try again with a simpler request.");
   }

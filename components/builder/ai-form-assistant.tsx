@@ -12,12 +12,14 @@ type AssistantProps =
 
 export function AIFormAssistant(props: AssistantProps) {
   const helpOnly = props.mode === "help";
+  const formId = helpOnly ? null : props.formId;
   const form = helpOnly ? undefined : props.form;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesRef = useRef<ChatMessage[]>([]);
   const latestFormRef = useRef(form);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [takingLong, setTakingLong] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +34,22 @@ export function AIFormAssistant(props: AssistantProps) {
   }, [form]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const url = formId === null ? "/api/ai/history" : `/api/ai/history?formId=${encodeURIComponent(formId)}`;
+    fetch(url, { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as { messages?: ChatMessage[]; error?: string };
+        if (!response.ok) throw new Error(data.error || "Could not load chat history.");
+        const saved = data.messages ?? [];
+        messagesRef.current = saved;
+        setMessages(saved);
+      })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load chat history."); })
+      .finally(() => { if (!controller.signal.aborted) setLoadingHistory(false); });
+    return () => controller.abort();
+  }, [formId]);
+
+  useEffect(() => {
     if (!busy) return;
     const timer = window.setTimeout(() => setTakingLong(true), 12_000);
     return () => window.clearTimeout(timer);
@@ -40,8 +58,8 @@ export function AIFormAssistant(props: AssistantProps) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const request = prompt.trim();
-    if (!request || busy) return;
-    const history = messagesRef.current.slice(-8);
+    if (!request || busy || loadingHistory) return;
+    const history = messagesRef.current;
     setBusy(true);
     setTakingLong(false);
     setError(null);
@@ -51,7 +69,7 @@ export function AIFormAssistant(props: AssistantProps) {
       const response = await fetch(helpOnly ? "/api/ai/site-help" : "/api/ai/form-assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(helpOnly ? { prompt: request } : { formId: props.formId, form, prompt: request, history }),
+        body: JSON.stringify(helpOnly ? { prompt: request } : { formId: props.formId, form, prompt: request }),
       });
       const data = await response.json().catch(() => null) as { reply?: string; form?: FormDefinition; error?: string } | null;
       if (!response.ok || !data?.reply) throw new Error(data?.error ?? "The assistant could not complete the request.");
@@ -62,11 +80,33 @@ export function AIFormAssistant(props: AssistantProps) {
       }
       appendMessage({ role: "assistant", content: data.reply! });
     } catch (requestError) {
+      messagesRef.current = history;
+      setMessages(history);
       setPrompt(request);
       setError(requestError instanceof Error ? requestError.message : "The assistant could not respond. Please try again.");
     } finally {
       setBusy(false);
       setTakingLong(false);
+    }
+  }
+
+  async function clearChat() {
+    if (busy || loadingHistory) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const url = formId === null ? "/api/ai/history" : `/api/ai/history?formId=${encodeURIComponent(formId)}`;
+      const response = await fetch(url, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(data?.error || "Could not clear chat history.");
+      }
+      messagesRef.current = [];
+      setMessages([]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not clear chat history.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -78,7 +118,10 @@ export function AIFormAssistant(props: AssistantProps) {
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600"><SparklesIcon className="h-5 w-5" /></span>
             <div><h2 id="ai-assistant-title" className="text-sm font-bold text-slate-900">{helpOnly ? "Formyst help" : "Form assistant"}</h2><p className="text-xs text-slate-500">{helpOnly ? "Learn how to use Formyst" : "Make changes by describing them"}</p></div>
           </div>
-          <button type="button" onClick={props.onClose} className="rounded-lg px-2.5 py-2 text-sm text-slate-500 hover:bg-slate-100" aria-label="Close form assistant">Close</button>
+          <div className="flex items-center gap-1">
+            {messages.length ? <button type="button" onClick={clearChat} disabled={busy} className="rounded-lg px-2.5 py-2 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">Clear chat</button> : null}
+            <button type="button" onClick={props.onClose} className="rounded-lg px-2.5 py-2 text-sm text-slate-500 hover:bg-slate-100" aria-label="Close form assistant">Close</button>
+          </div>
         </header>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 sm:space-y-4 sm:p-5" aria-live="polite">
@@ -87,6 +130,14 @@ export function AIFormAssistant(props: AssistantProps) {
               ? "Ask about creating forms, publishing, responses, or integrations. To edit a form, open its builder and use Ask Formyst there."
               : "Ask me to edit this form or explain how Formyst works. Form edits appear here automatically; save the form when you are happy with them."}
           </div>
+          {!messages.length && !loadingHistory ? (
+            <div className="flex flex-wrap gap-2">
+              {(helpOnly ? ["How do I share my form?", "Where can I see answers?"] : ["Make this form easier to fill out", "Ask for a phone number"]).map((example) => (
+                <button key={example} type="button" onClick={() => setPrompt(example)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-left text-xs text-slate-600 hover:border-brand-300 hover:text-brand-700">{example}</button>
+              ))}
+            </div>
+          ) : null}
+          {loadingHistory ? <p className="text-sm text-slate-500">Loading your conversation...</p> : null}
           {messages.map((message, index) => (
             <div key={`${index}-${message.role}`} className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm leading-5 ${message.role === "user" ? "ml-auto bg-brand-600 text-white" : "bg-slate-100 text-slate-700"}`}>
               {message.content}
@@ -97,7 +148,7 @@ export function AIFormAssistant(props: AssistantProps) {
         </div>
 
         <div className="shrink-0 border-t border-slate-200 p-3 sm:p-4">
-          <p className="mb-2 text-[11px] leading-4 text-slate-500">Local Ollama | {helpOnly ? "Product help" : "Form editing and product help"}. Responses are not sent.</p>
+          <p className="mb-2 text-[11px] leading-4 text-slate-500">Local Ollama | Chat is saved to your account. Form responses are not sent to the model. Do not enter passwords or tokens.</p>
           <form onSubmit={handleSubmit} className="relative">
             <label className="sr-only" htmlFor="ai-form-prompt">Describe a change to this form</label>
             <textarea
@@ -107,17 +158,17 @@ export function AIFormAssistant(props: AssistantProps) {
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
-                  if (!busy && prompt.trim()) event.currentTarget.form?.requestSubmit();
+                  if (!busy && !loadingHistory && prompt.trim()) event.currentTarget.form?.requestSubmit();
                 }
               }}
               maxLength={1200}
               rows={2}
-              disabled={busy}
-              placeholder="Message Formyst..."
+              disabled={busy || loadingHistory}
+              placeholder={helpOnly ? "Ask how Formyst works..." : "Describe what you want this form to do..."}
               className={`${inputClass} min-h-20 max-h-32 resize-y pb-12 pr-14`}
             />
             <span className="pointer-events-none absolute bottom-3 left-3 text-[10px] text-slate-400">Enter sends | Shift+Enter adds a line</span>
-            <button type="submit" disabled={busy || !prompt.trim()} className="absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm transition hover:bg-brand-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-45" aria-label="Send message" title="Send message">
+            <button type="submit" disabled={busy || loadingHistory || !prompt.trim()} className="absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm transition hover:bg-brand-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-45" aria-label="Send message" title="Send message">
               {busy ? <SpinnerIcon className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
             </button>
           </form>

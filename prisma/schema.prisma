@@ -17,6 +17,7 @@ model User {
   createdAt    DateTime  @default(now())
   forms        Form[]
   sessions     Session[]
+  assistantMessages AssistantMessage[]
 }
 
 model Session {
@@ -51,8 +52,22 @@ model Form {
   updatedAt      DateTime     @updatedAt
   submissions    Submission[]
   settings       Setting[]
+  assistantMessages AssistantMessage[]
 
   @@index([ownerId, updatedAt])
+}
+
+model AssistantMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  formId    String?
+  form      Form?    @relation(fields: [formId], references: [id], onDelete: Cascade)
+  role      String   @db.VarChar(12)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId, formId, createdAt])
 }
 
 model Submission {

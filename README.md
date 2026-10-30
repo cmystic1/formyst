@@ -93,15 +93,21 @@ server and the `qwen3:4b` model by default. You can override these with
 there are no per-request API charges; the model runs on the computer hosting
 Formyst. The model download uses roughly 2.5 GB of disk space.
 
-Only the current form design, the user's prompt, and recent assistant chat are
-sent to Ollama; form submissions are not included. The assistant first plans the
-edit, then generates a patch limited to the relevant form controls. Validated
-changes apply to the open editor
-automatically. The user still saves or publishes the form when ready. The
-assistant can answer questions about Formyst's form builder, publishing,
-responses, and integrations from a curated product guide. Account and security
-operations remain outside its scope. The assistant has no tools or access to
-execute code, query response data, or alter other forms.
+The assistant remembers the last 40 messages per form and keeps a separate
+workspace-help conversation. History belongs to the signed-in account, reloads
+when the chat opens again, and can be erased with **Clear chat**. Only the
+current form design, the user's request, and recent messages from that form's
+conversation are sent to Ollama; form submissions are not included. The
+assistant first plans the edit, then generates a patch limited to the relevant
+form controls. Everyday requests such as "ask for their phone number" or
+"make this easier to fill out" can become form edits without naming editor
+controls. Validated changes apply to the open editor automatically. The user
+still saves or publishes the form when ready. The product guide covers the
+workspace, builder, publishing, responses, integrations, and account settings.
+The assistant can explain where account controls are but cannot operate them.
+It has no tools or access to execute code, query response data, or alter other
+forms. Deploy the included Prisma migration before using chat memory on an
+existing installation (`npm run db:deploy`).
 
 When someone reports hard-to-read text, the editor checks text contrast against
 card and input backgrounds, adjusts unsafe field and button colors, and makes a

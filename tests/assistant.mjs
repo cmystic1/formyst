@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { defaultFormDefinition, parseFormDefinition } from '../lib/form-schema.ts'
-import { answerKnownHelpQuestion, isRestrictedAssistantRequest } from '../lib/assistant-guidance.ts'
-import { allowedThemeKeys, completeThemePatch, editPlanSchema, glassDirectionFromPlan, includeNamedThemeAreas, normalizePatchColors, reconcileGlassDirection, validateEditPlan } from '../lib/assistant-planner.ts'
+import { answerKnownHelpQuestion } from '../lib/assistant-guidance.ts'
+import { allowedThemeKeys, completeThemePatch, editPlanSchema, glassDirectionFromPlan, includeNamedThemeAreas, normalizePatchColors, reconcileGlassDirection, refineEverydayPlan, resolveGlassFollowUp, validateEditPlan } from '../lib/assistant-planner.ts'
 
 test('older forms gain a valid glass opacity without losing their theme', () => {
   const old = defaultFormDefinition()
@@ -29,10 +29,8 @@ test('edit plans need an instruction and a scoped target', () => {
   assert.deepEqual(mixed.themeAreas, ['card', 'button'])
 })
 
-test('product help stays accurate and account or security requests are restricted', () => {
+test('product help stays accurate', () => {
   assert.match(answerKnownHelpQuestion('How do I export responses?'), /Export CSV.*all responses/)
-  assert.equal(isRestrictedAssistantRequest('change my password'), true)
-  assert.equal(isRestrictedAssistantRequest('add an email field'), false)
 })
 
 test('glass instructions obey the actual opacity control', () => {
@@ -53,4 +51,22 @@ test('glass instructions obey the actual opacity control', () => {
   assert.equal(completeThemePatch({ buttonColor: '#006400', buttonTextColor: '#006400' }, theme).buttonTextColor, '')
   assert.equal(normalizePatchColors({ fieldStyle: { inputBorder: '1px solid #e0e0e0' } }).fieldStyle.inputBorder, '#e0e0e0')
   assert.deepEqual(normalizePatchColors({ theme: { button: 'full', buttonWidthCustom: '' } }), { theme: { button: 'full' } })
+  const followUp = resolveGlassFollowUp(editPlanSchema.parse({
+    action: 'edit', scopes: ['theme'], themeAreas: ['card'], instruction: 'Increase glass opacity to 55%', reply: '',
+  }), 'more', [
+    { role: 'user', content: 'make the card more transparent' },
+    { role: 'assistant', content: 'I set glass opacity to 55%.' },
+  ])
+  assert.equal(glassDirectionFromPlan(followUp), 'lower')
+})
+
+test('plain-language requests keep the right edit scope', () => {
+  const visualGuess = editPlanSchema.parse({ action: 'edit', scopes: ['theme', 'fieldStyle'], themeAreas: ['card'], instruction: 'Clarify the email question', reply: '' })
+  const clarity = refineEverydayPlan(visualGuess, 'people do not understand the email question')
+  assert.deepEqual(clarity.scopes, ['fields'])
+  assert.deepEqual(clarity.themeAreas, [])
+  const targeted = refineEverydayPlan(visualGuess, 'make the card more opaque and button larger')
+  assert.deepEqual(targeted.scopes, ['theme'])
+  const soft = refineEverydayPlan(visualGuess, 'make labels and inputs feel softer')
+  assert.deepEqual(soft.scopes, ['fieldStyle'])
 })

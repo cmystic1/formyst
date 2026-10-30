@@ -1,5 +1,5 @@
 import { defaultFormDefinition } from '../lib/form-schema.ts'
-import { editPlanJsonSchema, editPlanSchema, includeNamedThemeAreas, planSystemPrompt, reconcileGlassDirection, validateEditPlan } from '../lib/assistant-planner.ts'
+import { editPlanJsonSchema, editPlanSchema, includeNamedThemeAreas, planSystemPrompt, reconcileGlassDirection, refineEverydayPlan, resolveGlassFollowUp, validateEditPlan } from '../lib/assistant-planner.ts'
 import { FORMYST_HELP_GUIDE } from '../lib/assistant-guidance.ts'
 
 const model = process.env.OLLAMA_MODEL || 'qwen3:4b'
@@ -27,6 +27,12 @@ const cases = [
   { request: 'How do I export responses?', action: 'help', scopes: [], areas: [] },
   { request: 'make the background blue and add a phone question', action: 'edit', scopes: ['theme', 'fields'], areas: ['page'] },
   { request: 'make email optional', action: 'edit', scopes: ['fields'], areas: [] },
+  { request: 'put the email question first', action: 'edit', scopes: ['fields'], areas: [] },
+  { request: 'change the name question to a dropdown with Mr, Ms, and Mx choices', action: 'edit', scopes: ['fields'], areas: [] },
+  { request: 'ask for their phone number', action: 'edit', scopes: ['fields'], areas: [] },
+  { request: 'people do not understand the email question', action: 'edit', scopes: ['fields'], areas: [] },
+  { request: 'make this form easier to fill out', action: 'edit', scopes: ['fields'], areas: [] },
+  { request: 'create a workshop registration form', action: 'edit', scopes: ['fields', 'copy'], areas: [] },
   { request: 'make the card more opaque and button larger', action: 'edit', scopes: ['theme'], areas: ['card', 'button'] },
   { request: 'some text cannot be seen or not that visible', action: 'edit', scopes: ['theme', 'fieldStyle'], areas: ['card'] },
 ]
@@ -59,7 +65,7 @@ for (const item of selectedCases) {
   const raw = (await response.json()).message?.content
   const parsed = editPlanSchema.safeParse(JSON.parse(raw))
   const validated = parsed.success ? validateEditPlan(parsed.data) : null
-  const plan = validated ? includeNamedThemeAreas(reconcileGlassDirection(validated), item.request) : null
+  const plan = validated ? refineEverydayPlan(resolveGlassFollowUp(includeNamedThemeAreas(reconcileGlassDirection(validated), item.request), item.request, item.conversation ?? []), item.request) : null
   const correct = plan?.action === item.action &&
     [...plan.scopes].sort().join(',') === [...item.scopes].sort().join(',') &&
     item.areas.every((area) => plan.themeAreas.includes(area)) &&
